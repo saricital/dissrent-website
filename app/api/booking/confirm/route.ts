@@ -2,26 +2,58 @@ import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import { sendAdminEmail } from "@/lib/email";
 
+function getBaseUrl(): string {
+  return process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
+}
+
+function redirectToStatus(status: string): NextResponse {
+  return NextResponse.redirect(`${getBaseUrl()}/booking-action?status=${status}`);
+}
+
+async function readToken(req: NextRequest): Promise<string | null> {
+  const contentType = req.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    const body = (await req.json().catch(() => null)) as { token?: unknown } | null;
+    return typeof body?.token === "string" ? body.token : null;
+  }
+
+  const formData = await req.formData().catch(() => null);
+  const token = formData?.get("token");
+  return typeof token === "string" ? token : null;
+}
+
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token");
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
-
   if (!token) {
-    return NextResponse.redirect(`${baseUrl}/confirm?status=invalid`);
+    return redirectToStatus("invalid");
+  }
+
+  return NextResponse.redirect(
+    `${getBaseUrl()}/booking-action?action=confirm&token=${encodeURIComponent(token)}`
+  );
+}
+
+export async function POST(req: NextRequest) {
+  const token = await readToken(req);
+  if (!token) {
+    return redirectToStatus("invalid");
   }
 
   const booking = db.getBookingByToken(token);
-
   if (!booking || booking.status !== "pending") {
-    return NextResponse.redirect(`${baseUrl}/confirm?status=invalid`);
+    return redirectToStatus("invalid");
   }
 
-  db.confirmBooking(booking.id);
+  const result = db.confirmBookingIfAvailable(booking.id);
+  if (!result.success) {
+    return redirectToStatus(result.reason === "conflict" ? "unavailable" : "invalid");
+  }
 
-  // Auto-block the car's dates in the availability calendar
-  db.blockDatesForBooking(booking.car_img, booking.pickup_date, booking.return_date);
+  try {
+    await sendAdminEmail({ ...booking, status: "confirmed", confirm_token: null });
+  } catch (error) {
+    console.error("[EMAIL] Failed to send admin email:", error);
+  }
 
-  await sendAdminEmail({ ...booking, status: "confirmed" });
-
-  return NextResponse.redirect(`${baseUrl}/confirm?status=success`);
+  return redirectToStatus("success");
 }

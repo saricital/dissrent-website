@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import ResultsSection from "../ResultsSection";
-import BookingModal from "../BookingModal";
+import SearchResultsOverview from "../SearchResultsOverview";
+import BookingFlowModal from "../BookingFlowModal";
 import Footer from "../Footer";
-import SearchBar from "../SearchBar";
+import BookingSearchBar from "../BookingSearchBar";
 import styled from "styled-components";
 import type { Car, SearchResult, BookingContext } from "@/lib/types";
 
@@ -33,10 +33,10 @@ export default function SearchPageClient({ result, cars, blockedImgs }: Props) {
   return (
     <>
       <PageContainer>
-        <SearchBar />
-        <ResultsSection result={result} cars={cars} blockedImgs={blockedImgs} onBook={handleBook} />
+        <BookingSearchBar key={`${result.pickupDate}-${result.returnDate}`} initialResult={result} />
+        <SearchResultsOverview result={result} cars={cars} blockedImgs={blockedImgs} onBook={handleBook} />
       </PageContainer>
-      <BookingModal
+      <BookingFlowModal
         isOpen={bookingOpen}
         onClose={() => setBookingOpen(false)}
         bookingContext={bookingCtx}

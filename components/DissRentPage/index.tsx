@@ -5,9 +5,10 @@ import styled from "styled-components";
 import AdPopup from "../AdPopup";
 import Navbar from "../Navbar";
 import HeroSection from "../HeroSection";
-import SearchBar from "../SearchBar";
+import BookingSearchBar from "../BookingSearchBar";
 import CarGrid from "../CarGrid";
-import BookingModal from "../BookingModal";
+import BookingFlowModal from "../BookingFlowModal";
+import HomeReadySection from "../HomeReadySection";
 import Footer from "../Footer";
 import type { BookingContext } from "@/lib/types";
 
@@ -33,10 +34,11 @@ export default function DissRentPage() {
       <Navbar />
       <HeroSection />
       <PageContainer>
-        <SearchBar />
+        <BookingSearchBar />
         <CarGrid onBook={handleBook} />
+        <HomeReadySection />
       </PageContainer>
-      <BookingModal
+      <BookingFlowModal
         isOpen={bookingOpen}
         onClose={() => setBookingOpen(false)}
         bookingContext={bookingCtx}

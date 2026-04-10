@@ -1,5 +1,17 @@
 import type { NextConfig } from "next";
 
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'self'",
+  "img-src 'self' data: blob:",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com",
+  "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com",
+  "connect-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+].join("; ");
+
 const securityHeaders = [
   // Prevent clickjacking
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
@@ -16,15 +28,12 @@ const securityHeaders = [
   },
   // DNS prefetch
   { key: "X-DNS-Prefetch-Control", value: "on" },
+  { key: "Content-Security-Policy", value: contentSecurityPolicy },
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
 ];
 
 const nextConfig: NextConfig = {
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
   compiler: {
     styledComponents: true,
   },

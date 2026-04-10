@@ -1,7 +1,14 @@
 import { Resend } from "resend";
 import type { Booking } from "./db";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+function getResendClient(): Resend {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error("RESEND_API_KEY is not configured.");
+  }
+
+  return new Resend(apiKey);
+}
 
 function from(): string {
   const addr = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
@@ -27,7 +34,7 @@ function esc(str: string | null | undefined): string {
 
 export async function sendConfirmEmail(booking: Booking): Promise<void> {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
-  const confirmUrl = `${baseUrl}/api/booking/confirm?token=${booking.confirm_token}`;
+  const confirmUrl = `${baseUrl}/booking-action?action=confirm&token=${booking.confirm_token}`;
 
   const carInfo = booking.car_name
     ? `<p><strong>Auto:</strong> ${esc(booking.car_name)}</p>`
@@ -42,7 +49,7 @@ export async function sendConfirmEmail(booking: Booking): Promise<void> {
 
   const toEmail = process.env.TEST_EMAIL_OVERRIDE ?? booking.customer_email;
   console.log(`[EMAIL] Sending confirm email FROM=${from()} TO=${toEmail}${process.env.TEST_EMAIL_OVERRIDE ? ` (TEST override from ${esc(booking.customer_email)})` : ""}`);
-  const result = await resend.emails.send({
+  const result = await getResendClient().emails.send({
     from: from(),
     to: toEmail,
     subject: "Potvrdi rezervaciju — DISS RENT",
@@ -80,11 +87,10 @@ export async function sendAdminEmail(booking: Booking): Promise<void> {
   if (!adminEmail) return;
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
-  // Use cancel_token (not booking id) so the cancel URL is not guessable
-  const cancelUrl = `${baseUrl}/api/booking/cancel?token=${booking.cancel_token}`;
+  const cancelUrl = `${baseUrl}/booking-action?action=cancel&token=${booking.cancel_token}`;
   const contactPref = booking.contact_preference === "viber" ? "Viber" : "SMS";
 
-  const result = await resend.emails.send({
+  const result = await getResendClient().emails.send({
     from: from(),
     to: adminEmail,
     subject: `Nova rezervacija — ${esc(booking.car_name ?? "DISS RENT")}`,

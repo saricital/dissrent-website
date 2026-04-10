@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Page,
@@ -53,6 +53,21 @@ function buildCalendar(year: number, month: number): (number | null)[] {
   return cells;
 }
 
+async function fetchBlockedSet(rangeStart: string, rangeEnd: string): Promise<Set<string>> {
+  const res = await fetch(`/api/admin/availability?start=${rangeStart}&end=${rangeEnd}`);
+  if (!res.ok) {
+    return new Set<string>();
+  }
+
+  const data = await res.json();
+  const nextSet = new Set<string>();
+  for (const item of data.blocked as { car_img: string; date: string }[]) {
+    nextSet.add(`${item.car_img}__${item.date}`);
+  }
+
+  return nextSet;
+}
+
 function fmtDate(s: string | null): string {
   if (!s) return "—";
   const [y, m, d] = s.split("-");
@@ -77,20 +92,22 @@ export default function AdminDashboard({ initialBookings }: Props) {
   const rangeStart = toYMD(year, month, 1);
   const rangeEnd = toYMD(year, month, new Date(year, month + 1, 0).getDate());
 
-  const fetchBlocked = useCallback(async () => {
-    const res = await fetch(`/api/admin/availability?start=${rangeStart}&end=${rangeEnd}`);
-    if (!res.ok) return;
-    const data = await res.json();
-    const set = new Set<string>();
-    for (const item of data.blocked as { car_img: string; date: string }[]) {
-      set.add(`${item.car_img}__${item.date}`);
-    }
-    setBlockedSet(set);
-  }, [rangeStart, rangeEnd]);
-
   useEffect(() => {
-    fetchBlocked();
-  }, [fetchBlocked]);
+    let active = true;
+
+    async function loadBlocked() {
+      const nextSet = await fetchBlockedSet(rangeStart, rangeEnd);
+      if (active) {
+        setBlockedSet(nextSet);
+      }
+    }
+
+    void loadBlocked();
+
+    return () => {
+      active = false;
+    };
+  }, [rangeStart, rangeEnd]);
 
   async function toggleDate(carImg: string, date: string) {
     await fetch("/api/admin/availability", {
@@ -98,7 +115,7 @@ export default function AdminDashboard({ initialBookings }: Props) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ carImg, date }),
     });
-    await fetchBlocked();
+    setBlockedSet(await fetchBlockedSet(rangeStart, rangeEnd));
   }
 
   async function handleBookingAction(id: string, action: "confirm" | "cancel") {

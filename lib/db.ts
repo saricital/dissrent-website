@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import { enumerateDateStrings } from "./booking";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -33,6 +34,9 @@ db.exec(`
     date TEXT NOT NULL,
     UNIQUE(car_img, date)
   );
+
+  CREATE INDEX IF NOT EXISTS idx_blocked_dates_car_date
+  ON car_blocked_dates(car_img, date);
 `);
 
 // Migrate existing DB: add cancel_token column if it doesn't exist yet
@@ -83,8 +87,41 @@ const dbHelpers = {
     return db.prepare("SELECT * FROM bookings WHERE cancel_token = ?").get(token) as Booking | undefined;
   },
 
-  confirmBooking(id: string) {
-    db.prepare("UPDATE bookings SET status = 'confirmed', confirm_token = NULL WHERE id = ?").run(id);
+  confirmBookingIfAvailable(id: string): { success: boolean; reason?: "not_found" | "not_pending" | "conflict" } {
+    const insert = db.prepare("INSERT OR IGNORE INTO car_blocked_dates (car_img, date) VALUES (?, ?)");
+    const run = db.transaction((bookingId: string) => {
+      const booking = db
+        .prepare("SELECT * FROM bookings WHERE id = ?")
+        .get(bookingId) as Booking | undefined;
+
+      if (!booking) {
+        return { success: false as const, reason: "not_found" as const };
+      }
+
+      if (booking.status !== "pending") {
+        return { success: false as const, reason: "not_pending" as const };
+      }
+
+      if (
+        booking.car_img &&
+        booking.pickup_date &&
+        booking.return_date &&
+        dbHelpers.hasBlockingConflict(booking.car_img, booking.pickup_date, booking.return_date)
+      ) {
+        return { success: false as const, reason: "conflict" as const };
+      }
+
+      db.prepare("UPDATE bookings SET status = 'confirmed', confirm_token = NULL WHERE id = ?").run(bookingId);
+      if (booking.car_img && booking.pickup_date && booking.return_date) {
+        for (const date of enumerateDateStrings(booking.pickup_date, booking.return_date)) {
+          insert.run(booking.car_img, date);
+        }
+      }
+
+      return { success: true as const };
+    });
+
+    return run(id);
   },
 
   getAllBookings(): Booking[] {
@@ -111,15 +148,29 @@ const dbHelpers = {
     return db.prepare("SELECT * FROM bookings WHERE id = ?").get(id) as Booking | undefined;
   },
 
+  hasBlockingConflict(carImg: string, pickupDate: string, returnDate: string): boolean {
+    const row = db
+      .prepare(
+        `
+          SELECT 1
+          FROM car_blocked_dates
+          WHERE car_img = ?
+            AND date >= ?
+            AND date <= ?
+          LIMIT 1
+        `
+      )
+      .get(carImg, pickupDate, returnDate);
+
+    return Boolean(row);
+  },
+
   blockDatesForBooking(carImg: string | null, pickupDate: string | null, returnDate: string | null): void {
     if (!carImg || !pickupDate || !returnDate) return;
     const insert = db.prepare("INSERT OR IGNORE INTO car_blocked_dates (car_img, date) VALUES (?, ?)");
     const run = db.transaction(() => {
-      const current = new Date(pickupDate);
-      const end = new Date(returnDate);
-      while (current <= end) {
-        insert.run(carImg, current.toISOString().slice(0, 10));
-        current.setDate(current.getDate() + 1);
+      for (const date of enumerateDateStrings(pickupDate, returnDate)) {
+        insert.run(carImg, date);
       }
     });
     run();
@@ -129,7 +180,7 @@ const dbHelpers = {
     const booking = db.prepare("SELECT * FROM bookings WHERE id = ?").get(id) as Booking | undefined;
     if (!booking) return;
     const run = db.transaction(() => {
-      db.prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ?").run(id);
+      db.prepare("UPDATE bookings SET status = 'cancelled', confirm_token = NULL, cancel_token = NULL WHERE id = ?").run(id);
       if (booking.car_img && booking.pickup_date && booking.return_date) {
         db.prepare(
           "DELETE FROM car_blocked_dates WHERE car_img = ? AND date >= ? AND date <= ?"
@@ -146,7 +197,29 @@ const dbHelpers = {
     return rows.map((r) => r.date);
   },
 
-  toggleBlockedDate(carImg: string, date: string): "blocked" | "unblocked" {
+  isDateReservedByConfirmedBooking(carImg: string, date: string): boolean {
+    const row = db
+      .prepare(
+        `
+          SELECT 1
+          FROM bookings
+          WHERE status = 'confirmed'
+            AND car_img = ?
+            AND pickup_date <= ?
+            AND return_date >= ?
+          LIMIT 1
+        `
+      )
+      .get(carImg, date, date);
+
+    return Boolean(row);
+  },
+
+  toggleBlockedDate(carImg: string, date: string): "blocked" | "unblocked" | "reserved" {
+    if (dbHelpers.isDateReservedByConfirmedBooking(carImg, date)) {
+      return "reserved";
+    }
+
     const existing = db.prepare(
       "SELECT id FROM car_blocked_dates WHERE car_img = ? AND date = ?"
     ).get(carImg, date);

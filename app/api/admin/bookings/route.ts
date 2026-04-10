@@ -38,11 +38,17 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (action === "confirm") {
-    if (booking.status !== "pending") {
+    const result = db.confirmBookingIfAvailable(id);
+    if (!result.success) {
+      if (result.reason === "conflict") {
+        return NextResponse.json(
+          { error: "Termin je u medjuvremenu zauzet. Osvjezite listu prije potvrde." },
+          { status: 409 }
+        );
+      }
+
       return NextResponse.json({ error: "Rezervacija nije u statusu pending." }, { status: 400 });
     }
-    db.confirmBooking(id);
-    db.blockDatesForBooking(booking.car_img, booking.pickup_date, booking.return_date);
   } else {
     if (booking.status === "cancelled") {
       return NextResponse.json({ error: "Rezervacija je već otkazana." }, { status: 400 });

@@ -1,9 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminToken } from "@/lib/adminAuth";
-import { createHash } from "crypto";
+import {
+  ADMIN_COOKIE_NAME,
+  createAdminSessionValue,
+  isAdminConfigured,
+  verifyAdminPassword,
+} from "@/lib/adminAuth";
 import { checkRateLimit } from "@/lib/rateLimit";
 
 export async function POST(req: NextRequest) {
+  if (!isAdminConfigured()) {
+    return NextResponse.json(
+      { error: "Admin pristup nije konfigurisan na serveru." },
+      { status: 503 }
+    );
+  }
+
   // Rate limit: 5 attempts per IP per 15 minutes
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
@@ -34,20 +45,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Lozinka je obavezna." }, { status: 400 });
   }
 
-  const inputHash = createHash("sha256").update(password).digest("hex");
-  const adminHash = getAdminToken();
+  const sessionValue = createAdminSessionValue();
+  if (!sessionValue) {
+    return NextResponse.json({ error: "Admin sesija nije mogla biti kreirana." }, { status: 500 });
+  }
 
-  if (inputHash !== adminHash) {
+  if (!verifyAdminPassword(password)) {
     return NextResponse.json({ error: "Pogrešna lozinka." }, { status: 401 });
   }
 
   const res = NextResponse.json({ success: true });
-  res.cookies.set("admin_auth", adminHash, {
+  res.cookies.set(ADMIN_COOKIE_NAME, sessionValue, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 24 * 7, // 7 days
+    maxAge: 60 * 60 * 24 * 7,
+    priority: "high",
   });
   return res;
 }

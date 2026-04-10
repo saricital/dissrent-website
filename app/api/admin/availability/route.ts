@@ -1,18 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import { isAdminAuthenticated } from "@/lib/adminAuth";
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-// Must match car.img values in carData (public paths with leading slash)
-const VALID_IMGS = [
-  "/5.jpeg", "/6.jpeg", "/002.jpeg", "/009.jpeg",
-  "/2.jpeg", "/00.jpeg", "/1.jpg", "/3.jpg",
-];
+import { DATE_RE } from "@/lib/booking";
+import { VALID_CAR_IMGS } from "@/lib/carData";
 
 function isValidDate(s: string): boolean {
   if (!DATE_RE.test(s)) return false;
-  const d = new Date(s);
+  const d = new Date(`${s}T00:00:00Z`);
   return !isNaN(d.getTime());
 }
 
@@ -64,7 +58,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "carImg and date required" }, { status: 400 });
   }
 
-  if (typeof carImg !== "string" || !VALID_IMGS.includes(carImg)) {
+  if (typeof carImg !== "string" || !VALID_CAR_IMGS.includes(carImg)) {
     return NextResponse.json({ error: "Nevažeći auto." }, { status: 400 });
   }
 
@@ -73,5 +67,12 @@ export async function POST(req: NextRequest) {
   }
 
   const result = db.toggleBlockedDate(carImg, date);
+  if (result === "reserved") {
+    return NextResponse.json(
+      { error: "Datum je vec vezan za potvrdjenu rezervaciju." },
+      { status: 409 }
+    );
+  }
+
   return NextResponse.json({ result });
 }

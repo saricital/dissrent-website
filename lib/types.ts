@@ -21,4 +21,5 @@ export interface BookingContext {
   pickupDate?: string;
   returnDate?: string;
   totalPrice?: number | null;
+  pricingMode?: "standard" | "discount" | "quote";
 }

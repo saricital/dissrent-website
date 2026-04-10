@@ -8,3 +8,9 @@ export const CAR_DATA: Car[] = [
   { name: "FORD KUGA",           img: "/2.jpeg",   price1: 80,  price2: 65  },
   { name: "TOYOTA YARIS",        img: "/00.jpeg",  price1: 60,  price2: 50  },
 ];
+
+export const VALID_CAR_IMGS = CAR_DATA.map((car) => car.img);
+
+export function getCarByImg(carImg: string): Car | undefined {
+  return CAR_DATA.find((car) => car.img === carImg);
+}
